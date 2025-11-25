@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>手机端 3D 粒子交互</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; touch-action: none; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        /* 隐藏原始视频流 */
+        .input_video { display: none; }
+
+        /* 加载提示 */
+        #loading {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            color: white; font-family: sans-serif; text-align: center;
+            background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px;
+            z-index: 20; pointer-events: none; width: 80%;
+        }
+
+        /* 摄像头预览小窗 (右上角，半透明) */
+        #camera-preview {
+            position: absolute; top: 10px; right: 10px; z-index: 10;
+            width: 100px; height: 133px; /* 3:4 比例 */
+            border-radius: 8px; opacity: 0.6;
+            transform: scaleX(-1); /* 镜像翻转 */
+            border: 1px solid rgba(255,255,255,0.3);
+            object-fit: cover;
+        }
+
+        /* 简单的底部控制栏 */
+        #controls {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            z-index: 15; display: flex; gap: 15px;
+            background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 30px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .btn {
+            background: rgba(255, 255, 255, 0.2); border: none;
+            color: white; padding: 10px 20px; border-radius: 20px;
+            font-size: 14px; cursor: pointer; transition: 0.3s;
+        }
+        .btn.active { background: #ffaa00; color: black; font-weight: bold; }
+        .btn:active { transform: scale(0.95); }
+
+    </style>
+</head>
+<body>
+
+    <div id="loading">
+        正在启动前置摄像头...<br>
+        <span style="font-size:12px; color:#aaa;">(请确保在 HTTPS 环境或 Localhost 下运行)</span>
+    </div>
+
+    <div id="canvas-container"></div>
+    
+    <!-- 隐藏的视频元素 -->
+    <video class="input_video" playsinline webkit-playsinline></video>
+    <!-- 预览画布 -->
+    <canvas id="camera-preview"></canvas>
+
+    <!-- 底部按钮 -->
+    <div id="controls">
+        <button class="btn active" onclick="switchModel('Heart', this)">❤️ 爱心</button>
+        <button class="btn" onclick="switchModel('Tangerine', this)">🍊 桔子</button>
+    </div>
+
+    <!-- 引入库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script>
+        // --- 1. 配置与变量 ---
+        // 手机性能优化：粒子减少到 2500
+        const particleCount = 2500; 
+        const params = {
+            model: 'Heart',
+            particleSize: 0.15, // 手机屏幕小，粒子大一点
+            interactionStrength: 2.5
+        };
+
+        let scene, camera, renderer, particles, geometry, material;
+        let positions, targetPositions;
+        let isHandDetected = false;
+        let handDistance = 0; // 0 ~ 1
+
+        // --- 2. Three.js 初始化 ---
+        function initThree() {
+            scene = new THREE.Scene();
+            // 稍暗的背景
+            scene.fog = new THREE.FogExp2(0x000000, 0.03);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.z = 6; // 拉近一点
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // 粒子初始化
+            positions = new Float32Array(particleCount * 3);
+            targetPositions = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions[i*3] = (Math.random()-0.5)*10;
+                positions[i*3+1] = (Math.random()-0.5)*10;
+                positions[i*3+2] = (Math.random()-0.5)*10;
+            }
+
+            geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            // 使用简单的发光贴图
+            const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png');
+
+            material = new THREE.PointsMaterial({
+                color: 0xff0066, // 初始爱心粉
+                size: params.particleSize,
+                map: sprite,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            // 初始形状
+            calculateTargetShape('Heart');
+            
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        // --- 3. 形状算法 (核心修改) ---
+        function calculateTargetShape(type) {
+            const scale = 2.5;
+            
+            for (let i = 0; i < particleCount; i++) {
+                let x, y, z;
+                const idx = i * 3;
+
+                if (type === 'Heart') {
+                    // 爱心数学模型
+                    let t = Math.random() * Math.PI * 2;
+                    let u = Math.random() * Math.PI;
+                    x = 16 * Math.pow(Math.sin(t), 3) * Math.sin(u);
+                    y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t)) * Math.sin(u);
+                    z = 6 * Math.cos(u);
+                    // 缩放
+                    x *= 0.12 * scale; y *= 0.12 * scale; z *= 0.12 * scale;
+                    // 上移一点
+                    y += 0.5;
+
+                } else if (type === 'Tangerine') {
+                    // 桔子/橙子 (扁球体)
+                    const u = Math.random() * Math.PI * 2; // 经度
+                    const v = Math.acos(2 * Math.random() - 1); // 纬度 (均匀分布)
+                    
+                    const r = 1.8 * scale; // 半径
+
+                    // 基本球体
+                    x = r * Math.sin(v) * Math.cos(u);
+                    z = r * Math.sin(v) * Math.sin(u);
+                    y = r * Math.cos(v);
+
+                    // 扁平化处理：压扁 Y 轴
+                    y *= 0.85; 
+
+                    // 增加一点表面纹理噪点，模拟桔子皮的不平整
+                    const noise = (Math.random() - 0.5) * 0.1;
+                    x += x * noise; y += y * noise; z += z * noise;
+
+                    // 添加一点顶部的“蒂” (少量粒子)
+                    if (i > particleCount * 0.95) {
+                        x = (Math.random() - 0.5) * 0.2;
+                        z = (Math.random() - 0.5) * 0.2;
+                        y = (1.5 * scale) + Math.random() * 0.5;
+                    }
+                }
+
+                targetPositions[idx] = x;
+                targetPositions[idx+1] = y;
+                targetPositions[idx+2] = z;
+            }
+        }
+
+        // --- 4. 按钮切换逻辑 ---
+        window.switchModel = function(modelName, btnElement) {
+            params.model = modelName;
+            calculateTargetShape(modelName);
+
+            // 切换颜色
+            if (modelName === 'Heart') {
+                material.color.setHex(0xff0066); // 粉红
+            } else if (modelName === 'Tangerine') {
+                material.color.setHex(0xffaa00); // 桔子橙
+            }
+
+            // UI 状态更新
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            btnElement.classList.add('active');
+        };
+
+        // --- 5. 动画循环 ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 自动旋转
+            particles.rotation.y += 0.003;
+            if(params.model === 'Tangerine') particles.rotation.x = 0.2; // 桔子稍微倾斜展示
+
+            const posAttr = geometry.attributes.position;
+            const currentPos = posAttr.array;
+
+            // 手势扩散系数
+            let explosion = 0;
+            if (isHandDetected) {
+                // 将手势距离 0.05-0.3 映射到 0-1 之间 (手机上距离较近)
+                explosion = (handDistance - 0.05) * 4.0;
+                if (explosion < 0) explosion = 0;
+            } else {
+                // 如果没有手，慢慢归位
+                handDistance *= 0.9;
+            }
+
+            for (let i = 0; i < particleCount; i++) {
+                const idx = i * 3;
+                const tx = targetPositions[idx];
+                const ty = targetPositions[idx+1];
+                const tz = targetPositions[idx+2];
+
+                // 简单的径向爆炸逻辑
+                const distFactor = explosion * 6.0; 
+                
+                // 目标位置 + 爆炸偏移
+                // 简化计算：直接沿原来的方向向外扩
+                const finalX = tx * (1 + distFactor);
+                const finalY = ty * (1 + distFactor);
+                const finalZ = tz * (1 + distFactor);
+
+                // 缓动更新 (Lerp)
+                currentPos[idx] += (finalX - currentPos[idx]) * 0.08;
+                currentPos[idx+1] += (finalY - currentPos[idx+1]) * 0.08;
+                currentPos[idx+2] += (finalZ - currentPos[idx+2]) * 0.08;
+            }
+
+            posAttr.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        // --- 6. 手机端优化版 MediaPipe (手动帧处理) ---
+        async function initCamera() {
+            const video = document.getElementsByClassName('input_video')[0];
+            const canvas = document.getElementById('camera-preview');
+            const ctx = canvas.getContext('2d');
+
+            // 降低处理分辨率以提升手机 FPS
+            canvas.width = 240;
+            canvas.height = 320; 
+
+            const hands = new Hands({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }});
+
+            // 关键：使用 Lite 模型 (modelComplexity: 0)
+            hands.setOptions({
+                maxNumHands: 1, // 手机上通常单手拿手机，检测一只手即可
+                modelComplexity: 0,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults(results => {
+                // 清空并绘制预览
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    isHandDetected = true;
+                    const lm = results.multiHandLandmarks[0];
+                    
+                    // 手机玩法：检测食指(8)和大拇指(4)的捏合/张开
+                    const thumb = lm[4];
+                    const index = lm[8];
+                    const d = Math.sqrt(Math.pow(thumb.x - index.x, 2) + Math.pow(thumb.y - index.y, 2));
+                    
+                    // 放大系数，使捏合更灵敏
+                    handDistance = d * 2.5; 
+                    
+                    // 画简单的骨架
+                    ctx.beginPath();
+                    ctx.moveTo(thumb.x * canvas.width, thumb.y * canvas.height);
+                    ctx.lineTo(index.x * canvas.width, index.y * canvas.height);
+                    ctx.strokeStyle = "#00ff00";
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+
+                } else {
+                    isHandDetected = false;
+                }
+            });
+
+            // 启动前置摄像头
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user', // 强制前置
+                        width: { ideal: 320 }, // 低分辨率
+                        height: { ideal: 480 }
+                    }
+                });
+                video.srcObject = stream;
+                video.play();
+                
+                document.getElementById('loading').style.display = 'none';
+
+                // 手动循环检测，避免阻塞 UI
+                async function detectionLoop() {
+                    if (!video.paused) {
+                        await hands.send({image: video});
+                    }
+                    // 稍微降低检测频率 (例如每 30-40ms 一次)，给渲染留出时间
+                    setTimeout(() => requestAnimationFrame(detectionLoop), 40);
+                }
+                detectionLoop();
+
+            } catch (e) {
+                document.getElementById('loading').innerHTML = "无法打开摄像头<br>请检查权限或使用HTTPS";
+                console.error(e);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 启动
+        initThree();
+        initCamera();
+
+    </script>
+</body>
+</html>
