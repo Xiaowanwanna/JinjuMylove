@@ -2,23 +2,20 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <!-- 禁止用户缩放，适配手机屏幕 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>小金桔的口袋满天星</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
         
-        /* 摄像头小窗 */
         .input_video { 
             position: absolute; bottom: 10px; right: 10px; 
-            width: 100px; height: 75px; /* 手机上改小一点 */
+            width: 100px; height: 75px; 
             border-radius: 8px; opacity: 0.6; z-index: 10; 
             transform: scaleX(-1); border: 2px solid #333; 
             pointer-events: none; 
         }
         
-        /* 交互区域 (静止圈) */
         #dead-zone {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             border: 2px dashed rgba(255, 255, 255, 0.3);
@@ -28,7 +25,6 @@
         }
         #dead-zone.locked { border-color: #ff3366; background: rgba(255, 51, 102, 0.15); box-shadow: 0 0 30px rgba(255, 51, 102, 0.2); border-style: solid;}
 
-        /* 手势光标 */
         #hand-cursor {
             position: absolute; width: 24px; height: 24px; 
             border: 2px solid #00ffcc; background: rgba(0, 255, 204, 0.2);
@@ -37,11 +33,10 @@
             box-shadow: 0 0 10px #00ffcc;
         }
 
-        /* ======== 顶部状态栏 (PC默认位置) ======== */
         #status-bar {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             z-index: 100; display: flex; gap: 15px; width: auto; justify-content: center;
-            pointer-events: none; /* 防止挡住手势 */
+            pointer-events: none;
         }
         .status-pill {
             padding: 8px 20px; border-radius: 20px; background: rgba(0,0,0,0.6);
@@ -51,7 +46,6 @@
         .active-pill { border-color: #00ffcc; color: #00ffcc; box-shadow: 0 0 10px rgba(0,255,204,0.2); }
         .locked-pill { border-color: #ff3366; color: #ff3366; box-shadow: 0 0 15px rgba(255,51,102,0.4); background: rgba(0,0,0,0.8); }
 
-        /* ======== 右上角按钮组 ======== */
         .top-btn-group {
             position: absolute; top: 20px; right: 20px; z-index: 200;
             display: flex; gap: 15px;
@@ -65,7 +59,6 @@
         .icon-btn:active { transform: scale(0.9); }
         .icon-btn.active { border-color: #00ffcc; color: #00ffcc; background: rgba(0, 255, 204, 0.15); }
 
-        /* ======== 设置面板 ======== */
         #settings-panel {
             position: absolute; bottom: 100px; left: 20px; z-index: 100;
             background: rgba(15, 15, 15, 0.9); padding: 20px; border-radius: 16px;
@@ -86,7 +79,6 @@
         .color-picker-row { display: flex; gap: 10px; align-items: center; }
         input[type=color] { border: none; width: 100%; height: 35px; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
 
-        /* ======== 悬停说明弹窗 ======== */
         #help-popup {
             position: absolute; top: 75px; right: 20px; width: 280px;
             background: rgba(20, 20, 20, 0.95); border: 1px solid rgba(0, 255, 204, 0.3);
@@ -100,7 +92,6 @@
         .help-text h4 { margin: 0 0 4px 0; color: #00ffcc; font-size: 14px; }
         .help-text p { margin: 0; font-size: 12px; color: #aaa; line-height: 1.4; }
 
-        /* ======== 手机专用锁定按钮 (屏幕底部) ======== */
         #lock-btn-mobile {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             width: 60px; height: 60px; border-radius: 50%;
@@ -108,7 +99,6 @@
             color: white; font-size: 24px; display: flex; justify-content: center; align-items: center;
             z-index: 100; backdrop-filter: blur(5px); cursor: pointer; transition: all 0.2s;
             box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-            /* 禁止长按选中文本 */
             -webkit-user-select: none;
         }
         #lock-btn-mobile:active { transform: translateX(-50%) scale(0.9); }
@@ -119,24 +109,11 @@
 
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 18px; z-index: 200; pointer-events: none; text-align: center; width: 80%; }
         
-        /* ======== 关键修正：手机端媒体查询适配 ======== */
         @media (max-width: 600px) {
-            /* 1. 状态栏下移，避开右上角按钮 */
-            #status-bar {
-                top: 80px; /* 移到按钮下方 */
-                width: 95%;
-                gap: 8px;
-            }
-            .status-pill {
-                padding: 6px 12px; /* 稍微改小一点 */
-                font-size: 12px;
-            }
-
-            /* 2. 设置面板居中 */
+            #status-bar { top: 80px; width: 95%; gap: 8px; }
+            .status-pill { padding: 6px 12px; font-size: 12px; }
             #settings-panel { left: 50%; transform: translateX(-50%) scale(0.95); bottom: 110px; width: 85%; transform-origin: bottom center; }
             #settings-panel.show { transform: translateX(-50%) scale(1); }
-            
-            /* 3. 帮助弹窗位置 */
             #help-popup { right: 50%; transform: translateX(50%) translateY(-10px); width: 85%; top: 120px; }
             #help-popup.show { transform: translateX(50%) translateY(0); }
         }
@@ -149,13 +126,11 @@
 
     <div id="loading">正在初始化...<br><span style="font-size:12px; opacity:0.6">请允许摄像头权限</span></div>
 
-    <!-- 右上角按钮组 -->
     <div class="top-btn-group">
         <div class="icon-btn" id="btn-settings">⚙️</div>
         <div class="icon-btn" id="btn-help">?</div>
     </div>
 
-    <!-- 帮助弹窗 -->
     <div id="help-popup">
         <div class="help-item">
             <div class="help-emoji">🔓</div>
@@ -171,38 +146,28 @@
                 <p>捏合手指 = 缩小<br>张开手指 = 放大</p>
             </div>
         </div>
-        <div class="help-item">
-            <div class="help-emoji">🕹️</div>
-            <div class="help-text">
-                <h4>旋转 (Rotate)</h4>
-                <p>手移出屏幕中心圈 = 旋转</p>
-            </div>
-        </div>
     </div>
     
     <div id="dead-zone"></div>
     <div id="hand-cursor"></div>
 
-    <!-- 状态栏 (手机上会自动下移) -->
     <div id="status-bar">
         <div class="status-pill" id="status-lock">自由操控</div>
         <div class="status-pill" id="status-action">等待手势...</div>
     </div>
 
-    <!-- 底部大锁定按钮 -->
     <div id="lock-btn-mobile">🔓</div>
 
-    <!-- 设置面板 -->
     <div id="settings-panel">
         <div class="panel-header">🎮 设置 (点击齿轮关闭)</div>
         
         <div class="setting-group">
             <div class="setting-label"><span>选择模型</span></div>
             <select id="model-select">
-                <option value="flower">🌹 粒子玫瑰</option>
-                <option value="heart">💖 3D 爱心</option>
-                <option value="tangerine">🍊 幸运金桔</option>
-                <option value="fireworks">🎆 璀璨烟花</option>
+                <option value="flower">🌹 我</option>
+                <option value="heart">💖 爱</option>
+                <option value="tangerine">🍊 小桔</option>
+                <option value="fireworks">🎆 一起看烟花~~</option>
             </select>
         </div>
 
@@ -256,6 +221,10 @@
         const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
         const currentPositions = new Float32Array(PARTICLE_COUNT * 3);
         
+        // 新增：颜色数据数组，用于支持彩色烟花
+        const particleColors = new Float32Array(PARTICLE_COUNT * 3);
+        const colorObj = new THREE.Color(); 
+        
         const cursor = document.getElementById('hand-cursor');
         const deadZone = document.getElementById('dead-zone');
         const statusLock = document.getElementById('status-lock');
@@ -286,6 +255,14 @@
             rotationSensitivity: 0.0001
         };
 
+        // 默认颜色配置表
+        const MODEL_COLORS = {
+            'heart': '#ff0055',    // 粉红
+            'flower': '#D71919',   // 深红
+            'tangerine': '#FF8800',// 橙色
+            'fireworks': '#FFFFFF' // 烟花基底色(会被彩色覆盖)
+        };
+
         function initDOMEvents() {
             inputOpen.addEventListener('input', (e) => {
                 state.openThreshold = parseFloat(e.target.value);
@@ -302,23 +279,37 @@
                 updateDeadZoneVisuals();
             });
             
+            // 模型切换逻辑更新
             modelSelect.addEventListener('change', (e) => {
                 state.model = e.target.value;
                 generateShape(state.model);
-                if(state.model === 'fireworks') { state.color = '#ffcc00'; colorPicker.value = '#ffcc00'; }
-                else if (state.model === 'heart') { state.color = '#ff0055'; colorPicker.value = '#ff0055'; }
+                
+                // 1. 获取默认颜色
+                let newColor = MODEL_COLORS[state.model] || '#ffffff';
+                
+                // 2. 更新状态和选择器
+                state.color = newColor;
+                colorPicker.value = newColor;
+
+                // 3. 处理彩色模式 (烟花)
+                if (state.model === 'fireworks') {
+                    applyMulticolor();
+                } else {
+                    applySingleColor();
+                }
             });
-            colorPicker.addEventListener('input', (e) => { state.color = e.target.value; });
+
+            colorPicker.addEventListener('input', (e) => { 
+                state.color = e.target.value;
+                // 手动改颜色时，切回单色模式
+                applySingleColor();
+            });
 
             document.addEventListener('keydown', (e) => {
                 if (e.code === 'Space') { e.preventDefault(); toggleLock(); }
             });
 
-            lockBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); 
-                toggleLock();
-            });
-            // 防止移动端点击穿透
+            lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleLock(); });
             lockBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); });
 
             btnSettings.addEventListener('click', (e) => {
@@ -370,6 +361,30 @@
             deadZone.style.height = diameter + 'px';
         }
 
+        // 应用单色模式
+        function applySingleColor() {
+            material.vertexColors = false; 
+            material.needsUpdate = true;
+        }
+
+        // 应用彩色模式 (仅烟花)
+        function applyMulticolor() {
+            material.vertexColors = true; // 开启顶点颜色
+            
+            // 为每个粒子生成随机颜色
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // 随机鲜艳的颜色
+                colorObj.setHSL(Math.random(), 1.0, 0.6); 
+                
+                particleColors[i * 3] = colorObj.r;
+                particleColors[i * 3 + 1] = colorObj.g;
+                particleColors[i * 3 + 2] = colorObj.b;
+            }
+            // 通知 Three.js 颜色数据已更新
+            geometry.attributes.color.needsUpdate = true;
+            material.needsUpdate = true;
+        }
+
         function initThree() {
             const container = document.getElementById('canvas-container');
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -383,12 +398,22 @@
             geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(currentPositions, 3));
             
+            // 初始化颜色属性 (默认全白)
+            for(let i=0; i<PARTICLE_COUNT*3; i++) particleColors[i] = 1.0;
+            geometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+            
             const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
 
             material = new THREE.PointsMaterial({
-                color: state.color, size: 0.4, sizeAttenuation: true,
-                map: sprite, alphaTest: 0.5, transparent: true, opacity: 0.8,
-                blending: THREE.AdditiveBlending
+                color: 0xffffff, // 基础色设为白，让 vertexColors 或 state.color 决定最终颜色
+                size: 0.4, 
+                sizeAttenuation: true,
+                map: sprite, 
+                alphaTest: 0.5, 
+                transparent: true, 
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                vertexColors: false // 默认关闭顶点颜色
             });
 
             particles = new THREE.Points(geometry, material);
@@ -407,29 +432,15 @@
                     x = 16 * Math.pow(Math.sin(t), 3); y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t); z = p * 2 - 3;
                     const scale = 0.5; x *= scale; y *= scale; z = (Math.random() - 0.5) * 10;
                 } else if (type === 'tangerine') {
-                    // 桔子建模：扁球体
                     const rBase = 7;
                     const u = Math.random() * Math.PI * 2;
                     const v = Math.random() * Math.PI;
-                    // 基本球体坐标
-                    x = rBase * Math.sin(v) * Math.cos(u);
-                    z = rBase * Math.sin(v) * Math.sin(u);
-                    y = rBase * Math.cos(v);
-                    
-                    // 压扁 Y 轴
+                    x = rBase * Math.sin(v) * Math.cos(u); z = rBase * Math.sin(v) * Math.sin(u); y = rBase * Math.cos(v);
                     y *= 0.85; 
-
-                    // 增加桔子皮的粗糙噪点
-                    x += (Math.random() - 0.5) * 0.3;
-                    y += (Math.random() - 0.5) * 0.3;
-                    z += (Math.random() - 0.5) * 0.3;
-
-                    // 顶部凹陷 (模拟蒂部)
+                    x += (Math.random() - 0.5) * 0.3; y += (Math.random() - 0.5) * 0.3; z += (Math.random() - 0.5) * 0.3;
                     if (y > rBase * 0.7) {
                         const falloff = (y - rBase * 0.7) / (rBase * 0.15);
-                        x *= (1 - falloff * 0.2); 
-                        z *= (1 - falloff * 0.2);
-                        y -= falloff * 0.5;
+                        x *= (1 - falloff * 0.2); z *= (1 - falloff * 0.2); y -= falloff * 0.5;
                     }
                 } else if (type === 'flower') {
                     const theta = Math.random() * Math.PI * 2; const phi = Math.acos((Math.random() * 2) - 1); const r = 5 * (1 + 0.5 * Math.sin(5 * theta) * Math.sin(phi));
@@ -449,7 +460,8 @@
                 statusLock.innerText = "🔒 已锁定";
                 statusLock.className = "status-pill locked-pill";
                 statusAction.innerText = "画面已冻结";
-                material.color.set(state.color);
+                // 锁定时如果不是多彩模式，应用当前颜色
+                if(!material.vertexColors) material.color.set(state.color);
                 renderer.render(scene, camera);
                 return;
             }
@@ -503,7 +515,14 @@
 
             let renderScale = state.currentScale;
             if (state.model === 'fireworks') renderScale += Math.sin(Date.now() * 0.005) * 0.2;
-            material.color.set(state.color);
+            
+            // 关键：如果不是多彩模式，才由 state.color 控制颜色；多彩模式由 vertexColor 控制
+            if(!material.vertexColors) {
+                material.color.set(state.color);
+            } else {
+                // 如果是多彩模式，确保材质基础色为白，这样才能显示出原本的彩虹色
+                material.color.set(0xffffff); 
+            }
 
             const positions = particles.geometry.attributes.position.array;
             for (let i = 0; i < PARTICLE_COUNT; i++) {
